@@ -1,0 +1,14 @@
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+
+# local recordings / scratch output
+*.webm
+*.mp4
+recording-*
+
+# dependencies (none today, but keep the door closed)
+node_modules/

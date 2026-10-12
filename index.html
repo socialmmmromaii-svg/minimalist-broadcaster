@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Minimalist Broadcaster — browser live streaming studio</title>
+<meta name="description" content="Minimalist Broadcaster is a free, open-source, browser-based live streaming studio: scenes, sources, audio mixer, preview/program transitions and local recording — no license fees, no install." />
+<meta name="color-scheme" content="dark" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230f1113'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23e5484d'/%3E%3Cpath d='M6 16a10 10 0 0 1 20 0' fill='none' stroke='%2335c4b5' stroke-width='2.5'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to studio</a>
+
+<header class="app-bar">
+  <div class="brand">
+    <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+      <rect width="32" height="32" rx="6" fill="#17191c"></rect>
+      <circle cx="16" cy="16" r="7" fill="#e5484d"></circle>
+      <path d="M6 16a10 10 0 0 1 20 0" fill="none" stroke="#35c4b5" stroke-width="2.5"></path>
+    </svg>
+    <div class="brand__text">
+      <h1>Minimalist Broadcaster</h1>
+      <p class="brand__sub">Browser streaming studio</p>
+    </div>
+  </div>
+
+  <div class="session-status" role="status" aria-live="polite">
+    <span class="chip chip--rec" id="recChip" hidden><span class="chip__dot" aria-hidden="true"></span>REC <span id="recTimer">00:00</span></span>
+    <span class="chip chip--live" id="liveChip" hidden><span class="chip__dot" aria-hidden="true"></span>LIVE</span>
+    <span class="chip chip--idle" id="idleChip">Ready</span>
+  </div>
+
+  <div class="app-actions">
+    <button type="button" class="btn btn--danger" id="btnRecord" aria-pressed="false" title="Record the program output (R)">
+      <span class="btn__icon" aria-hidden="true">●</span> Record
+    </button>
+    <button type="button" class="btn btn--primary" id="btnStream" aria-pressed="false" title="Start streaming to your configured endpoint">
+      <span class="btn__icon" aria-hidden="true">▲</span> Stream
+    </button>
+    <button type="button" class="btn btn--ghost" id="btnSettings" title="Settings (S)" aria-haspopup="dialog">Settings</button>
+  </div>
+</header>
+
+<main id="main" class="studio">
+  <!-- ============================ canvases ============================ -->
+  <section class="canvases" aria-label="Studio canvases">
+    <figure class="canvas-card canvas-card--preview">
+      <figcaption class="canvas-card__head">
+        <span class="badge badge--preview"><span class="badge__dot" aria-hidden="true"></span>Preview</span>
+        <span class="canvas-card__scene" id="previewSceneName">—</span>
+        <span class="canvas-card__meta" id="previewMeta">1280×720</span>
+      </figcaption>
+      <div class="canvas-frame">
+        <canvas id="previewCanvas" width="1280" height="720" tabindex="0"
+                role="application"
+                aria-label="Preview canvas. Click a source to select it, drag to move, drag a corner to resize. Arrow keys nudge the selected source."></canvas>
+        <p class="canvas-hint" id="previewHint" hidden>Empty scene — add a source from the Sources panel.</p>
+      </div>
+    </figure>
+
+    <div class="transition-rail" role="group" aria-label="Transition controls">
+      <label class="field">
+        <span class="field__label">Transition</span>
+        <select id="transitionType" class="input">
+          <option value="cut">Cut</option>
+          <option value="fade" selected>Fade</option>
+          <option value="move">Move</option>
+          <option value="slide">Slide</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="field__label">Duration <output id="transitionDurationValue" for="transitionDuration">400 ms</output></span>
+        <input type="range" id="transitionDuration" min="0" max="2000" step="50" value="400" />
+      </label>
+      <button type="button" class="btn btn--take" id="btnTake" title="Take preview to program (Space)">Take ▸</button>
+      <button type="button" class="btn" id="btnCut" title="Instant cut (Ctrl+Space)">Cut</button>
+      <button type="button" class="btn btn--ghost" id="btnSwap" title="Swap preview and program">Swap ⇄</button>
+    </div>
+
+    <figure class="canvas-card canvas-card--program">
+      <figcaption class="canvas-card__head">
+        <span class="badge badge--program"><span class="badge__dot" aria-hidden="true"></span>Program</span>
+        <span class="canvas-card__scene" id="programSceneName">—</span>
+        <span class="canvas-card__meta" id="programMeta">ON AIR</span>
+      </figcaption>
+      <div class="canvas-frame">
+        <canvas id="programCanvas" width="1280" height="720" tabindex="0" role="img"
+                aria-label="Program canvas — the output that is recorded and streamed."></canvas>
+      </div>
+    </figure>
+  </section>
+
+  <!-- ======================= properties (right) ======================= -->
+  <aside class="right-dock" aria-labelledby="propsTitle">
+    <div class="right-dock__head">
+      <h2 id="propsTitle">Properties</h2>
+      <span class="right-dock__hint" id="propsKind">Nothing selected</span>
+    </div>
+    <div class="right-dock__body" id="propsBody">
+      <div class="empty-state" id="propsEmpty">
+        <p class="empty-state__title">No source selected</p>
+        <p class="empty-state__text">Pick a source in the Sources panel, or click it in the Preview canvas, to edit its transform and style here.</p>
+      </div>
+      <form id="propsForm" hidden></form>
+    </div>
+
+    <section class="lower-thirds" aria-labelledby="ltTitle">
+      <h3 id="ltTitle">Lower thirds</h3>
+      <p class="muted">Quick text for a <strong>Lower third</strong> source in the current scene.</p>
+      <label class="field">
+        <span class="field__label">Headline</span>
+        <input type="text" class="input" id="ltHeadline" placeholder="Jane Doe" maxlength="80" />
+      </label>
+      <label class="field">
+        <span class="field__label">Subline</span>
+        <input type="text" class="input" id="ltSubline" placeholder="Live from the studio" maxlength="80" />
+      </label>
+      <div class="row">
+        <button type="button" class="btn btn--sm" id="btnAddLowerThird">Add lower third</button>
+        <button type="button" class="btn btn--sm btn--ghost" id="btnAddText">Add title text</button>
+      </div>
+    </section>
+  </aside>
+
+  <!-- ========================= dock (bottom) ========================= -->
+  <section class="dock" aria-label="Studio panels">
+    <div class="dock__tabs" role="tablist" aria-label="Panels">
+      <button type="button" role="tab" id="tab-scenes" aria-controls="panel-scenes" aria-selected="true" tabindex="0">Scenes</button>
+      <button type="button" role="tab" id="tab-sources" aria-controls="panel-sources" aria-selected="false" tabindex="-1">Sources</button>
+      <button type="button" role="tab" id="tab-mixer" aria-controls="panel-mixer" aria-selected="false" tabindex="-1">Mixer</button>
+      <button type="button" role="tab" id="tab-stream" aria-controls="panel-stream" aria-selected="false" tabindex="-1">Stream</button>
+    </div>
+
+    <div class="dock__panel" role="tabpanel" id="panel-scenes" aria-labelledby="tab-scenes" tabindex="0">
+      <div class="panel-toolbar">
+        <button type="button" class="btn btn--sm" id="btnAddScene">+ New scene</button>
+        <button type="button" class="btn btn--sm" id="btnDupScene">Duplicate</button>
+        <button type="button" class="btn btn--sm btn--ghost" id="btnRenScene">Rename</button>
+        <button type="button" class="btn btn--sm btn--ghost btn--danger-ghost" id="btnDelScene">Delete</button>
+        <span class="panel-toolbar__note">Click a scene to load it into <strong>Preview</strong>.</span>
+      </div>
+      <ul class="item-list" id="sceneList" role="listbox" aria-label="Scenes"></ul>
+    </div>
+
+    <div class="dock__panel" role="tabpanel" id="panel-sources" aria-labelledby="tab-sources" tabindex="0" hidden>
+      <div class="panel-toolbar">
+        <label class="sr-only" for="newSourceType">Source type</label>
+        <select id="newSourceType" class="input input--sm">
+          <option value="display">Screen / window capture</option>
+          <option value="camera">Camera</option>
+          <option value="lower-third">Lower third</option>
+          <option value="text">Title text</option>
+          <option value="image">Image</option>
+          <option value="video">Video file</option>
+          <option value="audio">Audio file</option>
+          <option value="clock">Clock</option>
+          <option value="color">Color background</option>
+        </select>
+        <button type="button" class="btn btn--sm" id="btnAddSource">+ Add</button>
+        <input type="file" id="sourceFile" accept="image/*,video/*,audio/*" hidden />
+        <span class="toolbar-sep" aria-hidden="true"></span>
+        <button type="button" class="btn btn--sm btn--ghost" id="btnSrcUp" title="Move selected source up">▲ Up</button>
+        <button type="button" class="btn btn--sm btn--ghost" id="btnSrcDown" title="Move selected source down">▼ Down</button>
+        <button type="button" class="btn btn--sm btn--ghost btn--danger-ghost" id="btnDelSource">Remove</button>
+      </div>
+      <ul class="item-list item-list--sources" id="sourceList" role="listbox" aria-label="Sources in the current scene"></ul>
+    </div>
+
+    <div class="dock__panel" role="tabpanel" id="panel-mixer" aria-labelledby="tab-mixer" tabindex="0" hidden>
+      <div class="mixer" id="mixerList"></div>
+    </div>
+
+    <div class="dock__panel" role="tabpanel" id="panel-stream" aria-labelledby="tab-stream" tabindex="0" hidden>
+      <div class="stream-grid">
+        <form class="stream-form" id="streamForm">
+          <fieldset>
+            <legend>Destination</legend>
+            <label class="field">
+              <span class="field__label">WHIP endpoint (HTTPS)</span>
+              <input type="url" class="input" id="whipUrl" placeholder="https://example.com/live/stream/whip" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span class="field__label">Bearer token (optional)</span>
+              <input type="password" class="input" id="whipToken" placeholder="••••••••" autocomplete="off" />
+            </label>
+            <p class="muted">Browsers cannot push RTMP directly. Use a free, open-source relay such as
+              <strong>MediaMTX</strong>, <strong>OvenMediaEngine</strong> or <strong>SRS</strong> in front of
+              YouTube/Twitch/Facebook, and paste its WHIP URL above.</p>
+          </fieldset>
+          <fieldset>
+            <legend>RTMP targets <span class="muted">(for your relay)</span></legend>
+            <label class="field">
+              <span class="field__label">Server URL</span>
+              <input type="text" class="input" id="rtmpUrl" placeholder="rtmp://a.rtmp.youtube.com/live2" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span class="field__label">Stream key</span>
+              <input type="password" class="input" id="rtmpKey" placeholder="••••-••••-••••" autocomplete="off" />
+            </label>
+          </fieldset>
+          <div class="row">
+            <button type="submit" class="btn btn--primary" id="btnSaveStream">Save destination</button>
+            <span class="muted" id="streamSavedNote" role="status"></span>
+          </div>
+        </form>
+        <div class="stream-help">
+          <h3>How output works</h3>
+          <ol>
+            <li><strong>Record</strong> always works — program + mixer audio are written to a WebM file on your machine.</li>
+            <li><strong>Stream</strong> publishes program over WebRTC to a WHIP endpoint you control.</li>
+            <li>Your relay re-encodes and pushes RTMP to any platform (YouTube, Twitch, Facebook, Kick…).</li>
+          </ol>
+          <p class="muted">Nothing leaves your browser until you press Stream.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="status-bar">
+  <span id="statusHint">Tip: press <kbd>Space</kbd> to take preview to program, <kbd>R</kbd> to record.</span>
+  <span class="status-bar__right">
+    <span id="statusFps">— fps</span>
+    <span aria-hidden="true">·</span>
+    <span id="statusRes">1280×720</span>
+    <span aria-hidden="true">·</span>
+    <span id="statusSaved">Saved</span>
+  </span>
+</footer>
+
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+<dialog id="settingsDialog" aria-labelledby="settingsTitle">
+  <form method="dialog" class="settings">
+    <h2 id="settingsTitle">Settings</h2>
+
+    <fieldset>
+      <legend>Output</legend>
+      <label class="field">
+        <span class="field__label">Canvas resolution</span>
+        <select class="input" id="setResolution">
+          <option value="1920x1080">1920×1080 (Full HD)</option>
+          <option value="1280x720" selected>1280×720 (HD)</option>
+          <option value="854x480">854×480 (SD)</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="field__label">Frame rate</span>
+        <select class="input" id="setFps">
+          <option value="60">60 fps</option>
+          <option value="30" selected>30 fps</option>
+          <option value="24">24 fps</option>
+        </select>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Shortcuts</legend>
+      <dl class="shortcuts">
+        <dt><kbd>Space</kbd></dt><dd>Take preview → program</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>Space</kbd></dt><dd>Cut</dd>
+        <dt><kbd>R</kbd></dt><dd>Start / stop recording</dd>
+        <dt><kbd>S</kbd></dt><dd>Open settings</dd>
+        <dt><kbd>Delete</kbd></dt><dd>Remove selected source</dd>
+        <dt><kbd>↑ ↓ ← →</kbd></dt><dd>Nudge selected source (Shift = 10 px)</dd>
+      </dl>
+    </fieldset>
+
+    <fieldset>
+      <legend>Data</legend>
+      <p class="muted">Scenes, sources and mixer levels are stored locally in your browser.</p>
+      <button type="button" class="btn btn--sm btn--danger-ghost" id="btnResetData">Reset to factory layout</button>
+    </fieldset>
+
+    <div class="row row--end">
+      <button type="submit" class="btn btn--primary" value="close">Done</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
